@@ -4,48 +4,63 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Kotlin Multiplatform (KMP) project using Compose Multiplatform, targeting Android, iOS, Desktop (JVM), and Web (JS/Wasm). The project appears to be a library/demo for ViewModel usage in Compose Multiplatform.
+A Kotlin Multiplatform (KMP) library providing ViewModel utilities for Compose Multiplatform. Targets Android, iOS, Desktop (JVM), and Web (JS/Wasm).
 
 ## Build Commands
 
 ```bash
-# Android
-./gradlew :composeApp:assembleDebug
-
-# Desktop (JVM)
-./gradlew :composeApp:run
-
-# Web (Wasm - modern browsers)
-./gradlew :composeApp:wasmJsBrowserDevelopmentRun
-
-# Web (JS - legacy browsers)
-./gradlew :composeApp:jsBrowserDevelopmentRun
+# Run demo app
+./gradlew :composeApp:run                          # Desktop
+./gradlew :composeApp:assembleDebug                # Android
+./gradlew :composeApp:wasmJsBrowserDevelopmentRun  # Web (Wasm)
+./gradlew :composeApp:jsBrowserDevelopmentRun      # Web (JS)
 
 # Run tests
-./gradlew :viewmodelincompose:check
-./gradlew :composeApp:check
+./gradlew :library:check      # Library tests
+./gradlew :composeApp:check   # Demo app tests
+
+# Run single test class (example)
+./gradlew :library:jvmTest --tests "com.ocnyang.viewmodelincompose.ExampleUnitTest"
 ```
 
-iOS builds require Xcode - open the `iosApp` directory in Xcode.
+iOS: Open `iosApp` directory in Xcode.
 
-## Architecture
+## Modules
 
-### Modules
+- **library**: Core KMP library with ViewModel utilities
+- **composeApp**: Demo application showcasing the library
 
-- **composeApp**: Demo application showcasing the library across all platforms
-- **viewmodelincompose**: The core library module (KMP library)
+## Library Architecture
 
-### Source Set Structure
+The library (`library/src/commonMain/kotlin/com/ocnyang/viewmodelincompose/`) provides:
 
-Both modules follow standard KMP source set conventions:
-- `commonMain`: Shared code for all platforms
-- `androidMain`, `iosMain`, `jvmMain`, `jsMain`, `wasmJsMain`: Platform-specific implementations
-- `commonTest`: Shared tests
-- `androidDeviceTest`: Android instrumentation tests
+### EventEffect (`eventeffect/`)
+Lifecycle-aware one-time event handling for Compose:
+- `EventChannel<T>`: Channel-based event emitter for ViewModels. Events are buffered and guaranteed delivery.
+- `EventEffect()`: Composable that collects events from a Flow, respecting lifecycle state (default: STARTED).
 
-### Key Dependencies
+Usage pattern:
+```kotlin
+// ViewModel
+private val _events = EventChannel<UiEvent>()
+val events: Flow<UiEvent> = _events.flow
+
+// Composable
+EventEffect(viewModel.events) { event -> /* handle */ }
+```
+
+### StateBus (`statebus/`)
+Cross-screen state sharing with automatic cleanup:
+- Two-tier ViewModel architecture (Activity-level StateBus + per-screen listener ViewModels)
+- Automatic listener tracking and resource cleanup
+- SavedStateHandle integration for process death recovery
+- Thread-safe with ConcurrentHashMap + AtomicInteger
+
+Note: StateBus currently uses Android-specific APIs (`android.util.Log`, `SavedStateHandle`) and is not fully multiplatform yet.
+
+## Key Dependencies
 
 - Compose Multiplatform 1.9.1
 - Kotlin 2.2.20
-- AndroidX Lifecycle ViewModel Compose (multiplatform version via JetBrains)
-- Compose Hot Reload plugin enabled for development
+- JetBrains Lifecycle ViewModel Compose (`org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose`)
+- Compose Hot Reload plugin for development
