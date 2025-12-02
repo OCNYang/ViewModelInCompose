@@ -2,148 +2,167 @@ package com.ocnyang.viewmodelincompose.shareviewmodel.scopedstore
 
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
+import kotlin.reflect.KClass
 
 /**
- * A [ViewModel] that holds a [ViewModelStore] for sharing ViewModels between specific Composable screens.
+ * Scope 注册表
  *
- * Unlike Activity-scoped or NavGraph-scoped ViewModels, this allows you to define
- * a custom scope that can be shared between specific pages and survives configuration changes.
+ * 管理所有 [SharedViewModelStoreOwner] 的注册和生命周期。
+ * 作为 ViewModel 实现，确保跨配置更改（如屏幕旋转）时保留状态。
  *
- * ## Key Features
- * - ✅ Survives configuration changes (screen rotation)
- * - ✅ Thread-safe access to ViewModels
- * - ✅ Automatic cleanup when parent ViewModel is cleared
- * - ✅ Precise lifecycle control: Share ViewModels only between specific screens
- * - ✅ No size limit: Can store any large objects
- * - ✅ Kotlin Multiplatform compatible
- *
- * ## Architecture
+ * ## 架构
  *
  * ```
- * Activity/Fragment ViewModel Store
- *   └─ ScopedViewModelStoreOwner (ViewModel) ← survives config changes
- *       └─ Internal ViewModelStore
- *           └─ SharedViewModel1
- *           └─ SharedViewModel2
+ * Activity/Fragment ViewModelStore
+ *   └─ ScopedViewModelStoreOwner (ViewModel, 注册表)
+ *       └─ Map<KClass, SharedViewModelStoreOwner>
+ *           ├─ OrderFlowStoreOwner::class → OrderFlowStoreOwner
+ *           │   └─ ViewModelStore
+ *           │       └─ SharedOrderViewModel
+ *           ├─ CheckoutStoreOwner::class → CheckoutStoreOwner
+ *           │   └─ ViewModelStore
+ *           │       └─ CheckoutViewModel
+ *           └─ ...
  * ```
  *
- * ## Usage
+ * ## 使用方式
+ *
+ * 通过 [ProvideScopedViewModelStoreOwner] 在根路由提供：
  *
  * ```kotlin
  * @Composable
- * fun MyNavHost(navController: NavHostController) {
- *     // Create a scoped store owner - survives configuration changes
- *     val scopedStoreOwner = rememberScopedViewModelStoreOwner(key = "home_order_scope")
- *
- *     NavHost(navController, startDestination = Route.Home) {
- *         composable<Route.Home> {
- *             val sharedViewModel: SharedViewModel = viewModel(
- *                 viewModelStoreOwner = scopedStoreOwner
- *             )
- *             HomeScreen(sharedViewModel)
- *         }
- *         composable<Route.Order> {
- *             val sharedViewModel: SharedViewModel = viewModel(
- *                 viewModelStoreOwner = scopedStoreOwner
- *             )
- *             OrderScreen(sharedViewModel)
- *         }
+ * fun App() {
+ *     ProvideScopedViewModelStoreOwner {
+ *         MyNavHost()
  *     }
  * }
  * ```
  *
- * @see rememberScopedViewModelStoreOwner
+ * @see SharedViewModelStoreOwner
+ * @see ProvideScopedViewModelStoreOwner
+ * @see RegisterSharedStoreOwner
  */
-class ScopedViewModelStoreOwner : ViewModel(), ViewModelStoreOwner {
+class ScopedViewModelStoreOwner : ViewModel() {
 
-    /**
-     * Synchronization lock for thread-safe operations
-     */
     private val lock = SynchronizedObject()
 
     /**
-     * Internal ViewModelStore that holds the shared ViewModels
+     * 已注册的 SharedViewModelStoreOwner 映射表
      */
-    private val _viewModelStore = ViewModelStore()
-
-    override val viewModelStore: ViewModelStore
-        get() = _viewModelStore
+    private val registry = mutableMapOf<KClass<out SharedViewModelStoreOwner>, SharedViewModelStoreOwner>()
 
     /**
-     * Clears all ViewModels stored in this owner.
+     * 获取或创建指定类型的 [SharedViewModelStoreOwner]
      *
-     * Thread-safe: Can be called from any thread.
+     * 如果已存在，返回现有实例；否则调用 factory 创建新实例并注册。
      *
-     * Call this when the scope is no longer needed, for example when
-     * navigating away from all screens that share this ViewModel store.
-     *
-     * Note: After clearing, new ViewModels can still be created if screens
-     * continue to use this owner.
+     * @param key StoreOwner 的 KClass
+     * @param factory 创建 StoreOwner 的工厂函数
+     * @return StoreOwner 实例
      */
-    fun clear() {
-        synchronized(lock) {
-            _viewModelStore.clear()
+    fun <T : SharedViewModelStoreOwner> getOrPut(
+        key: KClass<T>,
+        factory: () -> T
+    ): T {
+        return synchronized(lock) {
+            @Suppress("UNCHECKED_CAST")
+            registry.getOrPut(key) { factory() } as T
         }
     }
 
     /**
-     * Called when this ViewModel is being destroyed.
-     * Automatically clears all stored ViewModels.
+     * 获取指定类型的 [SharedViewModelStoreOwner]
+     *
+     * @param key StoreOwner 的 KClass
+     * @return StoreOwner 实例
+     * @throws IllegalStateException 如果未注册
+     */
+    fun <T : SharedViewModelStoreOwner> get(key: KClass<T>): T {
+        return synchronized(lock) {
+            @Suppress("UNCHECKED_CAST")
+            registry[key] as? T
+                ?: error("${key.simpleName} not registered! Please call RegisterSharedStoreOwner in your NavHost first.")
+        }
+    }
+
+    /**
+     * 获取指定类型的 [SharedViewModelStoreOwner]，未注册返回 null
+     *
+     * @param key StoreOwner 的 KClass
+     * @return StoreOwner 实例，或 null
+     */
+    fun <T : SharedViewModelStoreOwner> getOrNull(key: KClass<T>): T? {
+        return synchronized(lock) {
+            @Suppress("UNCHECKED_CAST")
+            registry[key] as? T
+        }
+    }
+
+    /**
+     * 清理指定 Scope
+     *
+     * 清理 StoreOwner 中的所有 ViewModel 并从注册表移除。
+     *
+     * @param key StoreOwner 的 KClass
+     * @return true 如果已清理，false 如果不存在
+     */
+    @PublishedApi
+    internal fun clearScope(key: KClass<out SharedViewModelStoreOwner>): Boolean {
+        return synchronized(lock) {
+            val owner = registry[key] ?: return@synchronized false
+            owner.clear()
+            registry.remove(key)
+            true
+        }
+    }
+
+    /**
+     * 检查指定 Scope 是否已注册
+     *
+     * @param key StoreOwner 的 KClass
+     * @return true 如果已注册
+     */
+    fun isRegistered(key: KClass<out SharedViewModelStoreOwner>): Boolean {
+        return synchronized(lock) {
+            registry.containsKey(key)
+        }
+    }
+
+    /**
+     * 获取所有已注册的 Scope 信息（调试用）
+     *
+     * @return Map<Scope名称, 包含的路由集合>
+     */
+    fun getAllRegisteredInfo(): Map<String, Set<String>> {
+        return synchronized(lock) {
+            registry.mapKeys { it.key.simpleName ?: "Unknown" }
+                .mapValues { entry ->
+                    entry.value.includedRoutes.map { it.simpleName ?: "Unknown" }.toSet()
+                }
+        }
+    }
+
+    /**
+     * 当 ViewModel 被清理时，清理所有注册的 StoreOwner
      */
     override fun onCleared() {
         synchronized(lock) {
-            _viewModelStore.clear()
+            registry.values.forEach { it.clear() }
+            registry.clear()
         }
         super.onCleared()
     }
 }
 
 /**
- * Creates and remembers a [ScopedViewModelStoreOwner] that survives configuration changes.
+ * 创建并记住 [ScopedViewModelStoreOwner] 实例
  *
- * The owner is stored as a ViewModel in the current ViewModelStoreOwner (Activity/Fragment),
- * so it persists across configuration changes like screen rotation.
- *
- * ## Usage
- *
- * ```kotlin
- * @Composable
- * fun MyNavHost(navController: NavHostController) {
- *     // Create a scoped store owner with a unique key
- *     val scopedStoreOwner = rememberScopedViewModelStoreOwner(key = "home_order_scope")
- *
- *     // Use it to get shared ViewModels
- *     val sharedViewModel: SharedViewModel = viewModel(
- *         viewModelStoreOwner = scopedStoreOwner
- *     )
- * }
- * ```
- *
- * ## Multiple Scopes
- *
- * ```kotlin
- * @Composable
- * fun MyApp() {
- *     // Different keys create different scopes
- *     val orderScope = rememberScopedViewModelStoreOwner(key = "order_scope")
- *     val cartScope = rememberScopedViewModelStoreOwner(key = "cart_scope")
- * }
- * ```
- *
- * @param key A unique key to identify this scope. Different keys create different scopes.
- *            Use meaningful names like "order_scope", "checkout_flow", etc.
- * @return A [ScopedViewModelStoreOwner] that survives configuration changes
+ * 内部使用，通过 [ProvideScopedViewModelStoreOwner] 调用
  */
 @Composable
-fun rememberScopedViewModelStoreOwner(
-    key: String? = null
-): ScopedViewModelStoreOwner {
-    return viewModel(key = key?.let { "ScopedViewModelStoreOwner_$it" }) {
-        ScopedViewModelStoreOwner()
-    }
+fun rememberScopedViewModelStoreOwner(): ScopedViewModelStoreOwner {
+    return viewModel { ScopedViewModelStoreOwner() }
 }

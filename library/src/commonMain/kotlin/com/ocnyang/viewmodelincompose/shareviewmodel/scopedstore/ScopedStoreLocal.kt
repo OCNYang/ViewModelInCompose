@@ -2,11 +2,7 @@ package com.ocnyang.viewmodelincompose.shareviewmodel.scopedstore
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
-import kotlin.reflect.KClass
 
 /**
  * CompositionLocal for providing a [ScopedViewModelStoreOwner] to the composition tree.
@@ -17,33 +13,31 @@ import kotlin.reflect.KClass
  * ## Usage
  *
  * ```kotlin
- * // 1. Provide at a higher level (e.g., NavHost)
+ * // 1. Provide at root level
  * @Composable
- * fun MyNavHost(navController: NavHostController) {
- *     val scopedStoreOwner = rememberScopedViewModelStoreOwner(key = "order_scope")
- *
- *     ProvideScopedViewModelStoreOwner(scopedStoreOwner) {
- *         NavHost(navController, startDestination = Route.Home) {
- *             composable<Route.Home> { HomeScreen() }
- *             composable<Route.Order> { OrderScreen() }
- *         }
+ * fun App() {
+ *     ProvideScopedViewModelStoreOwner {
+ *         MyNavHost()
  *     }
  * }
  *
- * // 2. Use in child composables
+ * // 2. Register in NavHost composable
+ * composable<Route.Home> {
+ *     RegisterSharedStoreOwner(currentRoute) { OrderFlowStoreOwner() }
+ *     HomeScreen()
+ * }
+ *
+ * // 3. Use in screens
  * @Composable
  * fun HomeScreen() {
- *     val scopedStoreOwner = LocalScopedViewModelStoreOwner.current
- *         ?: error("ScopedViewModelStoreOwner not provided")
- *
- *     val sharedViewModel: SharedViewModel = viewModel(
- *         viewModelStoreOwner = scopedStoreOwner
- *     )
+ *     val storeOwner = getSharedStoreOwner<OrderFlowStoreOwner>()
+ *     val sharedVm: SharedViewModel = viewModel(viewModelStoreOwner = storeOwner)
  * }
  * ```
  *
  * @see ProvideScopedViewModelStoreOwner
- * @see ScopedViewModelStoreOwner
+ * @see RegisterSharedStoreOwner
+ * @see getSharedStoreOwner
  */
 val LocalScopedViewModelStoreOwner = staticCompositionLocalOf<ScopedViewModelStoreOwner?> {
     null
@@ -52,89 +46,27 @@ val LocalScopedViewModelStoreOwner = staticCompositionLocalOf<ScopedViewModelSto
 /**
  * Provides a [ScopedViewModelStoreOwner] to the composition tree.
  *
- * All child composables can access the provided owner via [LocalScopedViewModelStoreOwner].
+ * Call this at the root of your navigation graph to enable shared ViewModels.
  *
  * ## Usage
  *
  * ```kotlin
  * @Composable
- * fun MyApp() {
- *     val scopedStoreOwner = rememberScopedViewModelStoreOwner(key = "my_scope")
- *
- *     ProvideScopedViewModelStoreOwner(scopedStoreOwner) {
- *         // Child composables can now access scopedStoreOwner
- *         // via LocalScopedViewModelStoreOwner.current
- *         MyNavHost()
+ * fun App() {
+ *     ProvideScopedViewModelStoreOwner {
+ *         val navController = rememberNavController()
+ *         MyNavHost(navController)
  *     }
  * }
  * ```
  *
- * @param owner The [ScopedViewModelStoreOwner] to provide
  * @param content The child composables
  */
 @Composable
 fun ProvideScopedViewModelStoreOwner(
-    owner: ScopedViewModelStoreOwner,
     content: @Composable () -> Unit
 ) {
-    CompositionLocalProvider(LocalScopedViewModelStoreOwner provides owner) {
-        content()
-    }
-}
-
-/**
- * Provides a [ScopedViewModelStoreOwner] with automatic cleanup when leaving scope.
- *
- * This is a convenience function that combines [ProvideScopedViewModelStoreOwner] with
- * automatic scope management based on navigation state.
- *
- * ## Usage
- *
- * ```kotlin
- * @Composable
- * fun MyNavHost(navController: NavHostController) {
- *     val currentDestination = navController.currentBackStackEntryAsState().value?.destination
- *     val scopedStoreOwner = rememberScopedViewModelStoreOwner(key = "order_scope")
- *
- *     ProvideScopedViewModelStoreOwner(
- *         owner = scopedStoreOwner,
- *         currentRouteClass = currentDestination?.route?.let { getRouteClass(it) },
- *         includedRoutes = listOf(Route.Home::class, Route.Order::class)
- *     ) {
- *         NavHost(navController, startDestination = Route.Home) {
- *             composable<Route.Home> { HomeScreen() }
- *             composable<Route.Order> { OrderScreen() }
- *         }
- *     }
- * }
- * ```
- *
- * @param owner The [ScopedViewModelStoreOwner] to provide
- * @param currentRouteClass The current route class (from navigation state)
- * @param includedRoutes The list of route classes that share this scope
- * @param content The child composables
- */
-@Composable
-fun ProvideScopedViewModelStoreOwner(
-    owner: ScopedViewModelStoreOwner,
-    currentRouteClass: KClass<*>?,
-    includedRoutes: List<KClass<*>>,
-    content: @Composable () -> Unit
-) {
-    val currentIncludedRoutes by rememberUpdatedState(includedRoutes)
-
-    // Monitor navigation and clear when leaving scope
-    DisposableEffect(currentRouteClass) {
-        onDispose {
-            val isInScope = currentRouteClass != null && currentIncludedRoutes.any { routeClass ->
-                routeClass == currentRouteClass
-            }
-            // Clear when navigating away from all included routes
-            if (!isInScope && currentRouteClass != null) {
-                owner.clear()
-            }
-        }
-    }
+    val owner = rememberScopedViewModelStoreOwner()
 
     CompositionLocalProvider(LocalScopedViewModelStoreOwner provides owner) {
         content()
@@ -142,59 +74,60 @@ fun ProvideScopedViewModelStoreOwner(
 }
 
 /**
- * Provides a [ScopedViewModelStoreOwner] with automatic cleanup using a custom scope check.
+ * Gets the [SharedViewModelStoreOwner] of the specified type.
  *
- * This is the **recommended** approach as it provides the most flexibility
- * for determining whether the current destination is within scope.
+ * The StoreOwner must have been registered via [RegisterSharedStoreOwner] before calling this.
  *
  * ## Usage
  *
  * ```kotlin
  * @Composable
- * fun MyNavHost(navController: NavHostController) {
- *     val currentDestination = navController.currentBackStackEntryAsState().value?.destination
- *     val scopedStoreOwner = rememberScopedViewModelStoreOwner(key = "order_scope")
+ * fun HomeScreen() {
+ *     val storeOwner = getSharedStoreOwner<OrderFlowStoreOwner>()
  *
- *     ProvideScopedViewModelStoreOwner(
- *         owner = scopedStoreOwner,
- *         isInScope = {
- *             currentDestination?.hasRoute<Route.Home>() == true ||
- *             currentDestination?.hasRoute<Route.Order>() == true
- *         },
- *         keys = arrayOf(currentDestination)
- *     ) {
- *         NavHost(navController, startDestination = Route.Home) {
- *             composable<Route.Home> { HomeScreen() }
- *             composable<Route.Order> { OrderScreen() }
- *         }
+ *     val sharedVm: SharedOrderViewModel = viewModel(
+ *         viewModelStoreOwner = storeOwner
+ *     ) { SharedOrderViewModel() }
+ * }
+ * ```
+ *
+ * @param T The type of [SharedViewModelStoreOwner] to get
+ * @return The registered StoreOwner instance
+ * @throws IllegalStateException if [LocalScopedViewModelStoreOwner] is not provided
+ * @throws IllegalStateException if the specified type is not registered
+ */
+@Composable
+inline fun <reified T : SharedViewModelStoreOwner> getSharedStoreOwner(): T {
+    val registry = LocalScopedViewModelStoreOwner.current
+        ?: error("ScopedViewModelStoreOwner not provided! Please wrap your root composable with ProvideScopedViewModelStoreOwner { ... }")
+
+    return registry.get(T::class)
+}
+
+/**
+ * Gets the [SharedViewModelStoreOwner] of the specified type, or null if not registered.
+ *
+ * ## Usage
+ *
+ * ```kotlin
+ * @Composable
+ * fun MyScreen() {
+ *     val storeOwner = getSharedStoreOwnerOrNull<OrderFlowStoreOwner>()
+ *
+ *     if (storeOwner != null) {
+ *         val sharedVm: SharedOrderViewModel = viewModel(viewModelStoreOwner = storeOwner)
+ *         // Use shared data
+ *     } else {
+ *         // Fallback behavior
  *     }
  * }
  * ```
  *
- * @param owner The [ScopedViewModelStoreOwner] to provide
- * @param isInScope A function that returns true if the current destination is within scope
- * @param keys Keys that trigger re-evaluation of [isInScope] when changed
- * @param content The child composables
+ * @param T The type of [SharedViewModelStoreOwner] to get
+ * @return The registered StoreOwner instance, or null
  */
 @Composable
-fun ProvideScopedViewModelStoreOwner(
-    owner: ScopedViewModelStoreOwner,
-    isInScope: () -> Boolean,
-    vararg keys: Any?,
-    content: @Composable () -> Unit
-) {
-    val currentIsInScope by rememberUpdatedState(isInScope)
-
-    DisposableEffect(*keys) {
-        onDispose {
-            // Clear when not in scope
-            if (!currentIsInScope()) {
-                owner.clear()
-            }
-        }
-    }
-
-    CompositionLocalProvider(LocalScopedViewModelStoreOwner provides owner) {
-        content()
-    }
+inline fun <reified T : SharedViewModelStoreOwner> getSharedStoreOwnerOrNull(): T? {
+    val registry = LocalScopedViewModelStoreOwner.current ?: return null
+    return registry.getOrNull(T::class)
 }

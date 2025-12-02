@@ -5,53 +5,69 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 /**
- * Gets a ViewModel from the [LocalScopedViewModelStoreOwner].
+ * Gets a ViewModel from the specified [SharedViewModelStoreOwner].
  *
- * This is a convenience function that combines [LocalScopedViewModelStoreOwner.current]
- * and [viewModel] into a single call.
+ * This is a convenience function that combines [getSharedStoreOwner] and [viewModel] into a single call.
  *
  * ## Usage
  *
  * ```kotlin
  * @Composable
  * fun HomeScreen() {
- *     val sharedViewModel = scopedViewModel { SharedViewModel() }
- *     // Use sharedViewModel...
+ *     val sharedVm = sharedViewModel<OrderFlowStoreOwner, SharedOrderViewModel> {
+ *         SharedOrderViewModel()
+ *     }
+ *     // Use sharedVm...
  * }
  * ```
  *
+ * This is equivalent to:
+ *
+ * ```kotlin
+ * @Composable
+ * fun HomeScreen() {
+ *     val storeOwner = getSharedStoreOwner<OrderFlowStoreOwner>()
+ *     val sharedVm: SharedOrderViewModel = viewModel(viewModelStoreOwner = storeOwner) {
+ *         SharedOrderViewModel()
+ *     }
+ * }
+ * ```
+ *
+ * @param S The type of [SharedViewModelStoreOwner] to use
  * @param T The type of ViewModel to get
  * @param key An optional key to distinguish between multiple ViewModels of the same type
  * @param factory A factory function that creates the ViewModel instance
  * @return The ViewModel instance
  * @throws IllegalStateException if [LocalScopedViewModelStoreOwner] is not provided
+ * @throws IllegalStateException if the specified StoreOwner type is not registered
  */
 @Composable
-inline fun <reified T : ViewModel> scopedViewModel(
+inline fun <reified S : SharedViewModelStoreOwner, reified T : ViewModel> sharedViewModel(
     key: String? = null,
-    crossinline factory: () -> T
+    noinline factory: () -> T
 ): T {
-    val scopedStoreOwner = LocalScopedViewModelStoreOwner.current
-        ?: error("ScopedViewModelStoreOwner not provided! Please wrap your composables with ProvideScopedViewModelStoreOwner { ... }")
+    val storeOwner = getSharedStoreOwner<S>()
 
     return viewModel(
-        viewModelStoreOwner = scopedStoreOwner,
+        viewModelStoreOwner = storeOwner,
         key = key,
         initializer = { factory() }
     )
 }
 
 /**
- * Tries to get a ViewModel from the [LocalScopedViewModelStoreOwner] if available,
- * otherwise returns null.
+ * Gets a ViewModel from the specified [SharedViewModelStoreOwner], or null if not registered.
  *
  * ## Usage
  *
  * ```kotlin
  * @Composable
  * fun MyScreen() {
- *     val sharedViewModel = scopedViewModelOrNull { SharedViewModel() }
- *     if (sharedViewModel != null) {
+ *     val sharedVm = sharedViewModelOrNull<OrderFlowStoreOwner, SharedOrderViewModel> {
+ *         SharedOrderViewModel()
+ *     }
+ *
+ *     if (sharedVm != null) {
  *         // Use shared data
  *     } else {
  *         // Fallback behavior
@@ -59,21 +75,21 @@ inline fun <reified T : ViewModel> scopedViewModel(
  * }
  * ```
  *
+ * @param S The type of [SharedViewModelStoreOwner] to use
  * @param T The type of ViewModel to get
  * @param key An optional key to distinguish between multiple ViewModels of the same type
  * @param factory A factory function that creates the ViewModel instance
- * @return The ViewModel instance, or null if not in a scoped context
+ * @return The ViewModel instance, or null if the StoreOwner is not registered
  */
 @Composable
-inline fun <reified T : ViewModel> scopedViewModelOrNull(
+inline fun <reified S : SharedViewModelStoreOwner, reified T : ViewModel> sharedViewModelOrNull(
     key: String? = null,
-    crossinline factory: () -> T
+    noinline factory: () -> T
 ): T? {
-    val scopedStoreOwner = LocalScopedViewModelStoreOwner.current
-        ?: return null
+    val storeOwner = getSharedStoreOwnerOrNull<S>() ?: return null
 
     return viewModel(
-        viewModelStoreOwner = scopedStoreOwner,
+        viewModelStoreOwner = storeOwner,
         key = key,
         initializer = { factory() }
     )
