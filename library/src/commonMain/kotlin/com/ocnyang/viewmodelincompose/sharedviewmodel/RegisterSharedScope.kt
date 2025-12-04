@@ -1,4 +1,4 @@
-package com.ocnyang.viewmodelincompose.shareviewmodel.scopedstore
+package com.ocnyang.viewmodelincompose.sharedviewmodel
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -6,18 +6,26 @@ import androidx.compose.runtime.remember
 import kotlin.reflect.KClass
 
 /**
- * Registers a [SharedViewModelStoreOwner] and monitors the route stack for automatic cleanup.
+ * Registers a [SharedScope] and monitors the route stack for automatic cleanup.
  *
  * Call this once in your NavHost to register a shared scope. When the route stack no longer
- * contains any routes from [SharedViewModelStoreOwner.includedRoutes], the scope will be
- * automatically cleared.
+ * contains any routes from [SharedScope.includedRoutes], the scope will be automatically cleared.
  *
  * ## Usage
  *
  * ```kotlin
+ * // 1. Define scope as an object
+ * object OrderFlowScope : SharedScope(
+ *     includedRoutes = setOf(Route.Home::class, Route.Order::class)
+ * )
+ *
+ * object CheckoutScope : SharedScope(
+ *     includedRoutes = setOf(Route.Cart::class, Route.Payment::class)
+ * )
+ *
+ * // 2. Register in NavHost
  * @Composable
  * fun MyNavHost(navController: NavHostController) {
- *     // Collect the current route stack
  *     val backStack by navController.currentBackStack.collectAsState()
  *     val routesInStack = remember(backStack) {
  *         backStack.mapNotNull { entry ->
@@ -26,8 +34,8 @@ import kotlin.reflect.KClass
  *     }
  *
  *     // Register scopes (only once at NavHost level)
- *     RegisterSharedStoreOwner(routesInStack) { OrderFlowStoreOwner() }
- *     RegisterSharedStoreOwner(routesInStack) { CheckoutStoreOwner() }
+ *     RegisterSharedScope(routesInStack, OrderFlowScope)
+ *     RegisterSharedScope(routesInStack, CheckoutScope)
  *
  *     NavHost(navController, startDestination = Route.Home) {
  *         composable<Route.Home> { HomeScreen() }
@@ -39,57 +47,64 @@ import kotlin.reflect.KClass
  *
  * ## How it works
  *
- * 1. **Registration**: First call registers the StoreOwner in [ScopedViewModelStoreOwner]
+ * 1. **Registration**: First call registers the store in [SharedViewModelRegistry]
  * 2. **Monitoring**: Watches `routesInStack` for changes
- * 3. **Cleanup**: When none of the [SharedViewModelStoreOwner.includedRoutes] are in the stack,
- *    the StoreOwner is cleared
+ * 3. **Cleanup**: When none of the [SharedScope.includedRoutes] are in the stack,
+ *    the store is cleared
  *
  * ## Configuration Changes
  *
  * The scope survives configuration changes (like screen rotation) because
- * [ScopedViewModelStoreOwner] is a ViewModel that persists across recompositions.
+ * [SharedViewModelRegistry] is a ViewModel that persists across recompositions.
  *
- * @param T The type of [SharedViewModelStoreOwner] to register
+ * @param T The type of [SharedScope] to register
  * @param routesInStack The current routes in the navigation stack (as KClass set)
- * @param factory Factory function to create the StoreOwner (only called once per registration)
+ * @param sharedScope The scope instance (should be an object)
  */
 @Composable
-inline fun <reified T : SharedViewModelStoreOwner> RegisterSharedStoreOwner(
+inline fun <reified T : SharedScope> RegisterSharedScope(
     routesInStack: Set<KClass<*>>,
-    noinline factory: () -> T
+    sharedScope: T
 ) {
-    val registry = LocalScopedViewModelStoreOwner.current
-        ?: error("ScopedViewModelStoreOwner not provided! Please wrap your root composable with ProvideScopedViewModelStoreOwner { ... }")
+    val registry = LocalSharedViewModelRegistry.current
+        ?: error("SharedViewModelRegistry not provided! Please wrap your root composable with ProvideSharedViewModelRegistry { ... }")
 
-    // Get or create the StoreOwner (factory only called once)
-    val owner = remember { registry.getOrPut(T::class, factory) }
+    // Get or create the store (only created once per scope)
+    remember { registry.getOrPut(T::class, SharedViewModelStore()) }
 
     // Monitor route stack and clear when no included routes are present
     LaunchedEffect(routesInStack) {
-        if (!owner.hasRouteInStack(routesInStack)) {
+        val shouldKeep = sharedScope.includedRoutes.any { it in routesInStack }
+
+        if (!shouldKeep) {
             registry.clearScope(T::class)
         }
     }
 }
 
 /**
- * Registers a [SharedViewModelStoreOwner] with a custom cleanup condition.
+ * Registers a [SharedScope] with a custom cleanup condition.
  *
  * Use this when you need more control over when the scope is cleared,
  * or when working with non-standard navigation systems.
  *
+ * Note: This overload does not use [SharedScope.includedRoutes] for cleanup logic.
+ * The cleanup is controlled entirely by the [shouldKeep] function.
+ *
  * ## Usage
  *
  * ```kotlin
+ * // Define a scope (includedRoutes can be empty for custom cleanup)
+ * object CustomScope : SharedScope(includedRoutes = emptySet())
+ *
  * @Composable
  * fun MyNavHost(navController: NavHostController) {
  *     val currentRoute = navController.currentBackStackEntryAsState().value
  *         ?.destination?.route
  *
- *     RegisterSharedStoreOwner(
+ *     RegisterSharedScope<CustomScope>(
  *         shouldKeep = { currentRoute in listOf("home", "order") },
- *         key = currentRoute,
- *         factory = { OrderFlowStoreOwner() }
+ *         key = currentRoute
  *     )
  *
  *     NavHost(navController, startDestination = "home") {
@@ -99,21 +114,19 @@ inline fun <reified T : SharedViewModelStoreOwner> RegisterSharedStoreOwner(
  * }
  * ```
  *
- * @param T The type of [SharedViewModelStoreOwner] to register
+ * @param T The type of [SharedScope] to register
  * @param shouldKeep Function that returns true when the scope should be kept (not cleared)
  * @param key Key that triggers re-evaluation when changed
- * @param factory Factory function to create the StoreOwner
  */
 @Composable
-inline fun <reified T : SharedViewModelStoreOwner> RegisterSharedStoreOwner(
+inline fun <reified T : SharedScope> RegisterSharedScope(
     noinline shouldKeep: () -> Boolean,
-    key: Any?,
-    noinline factory: () -> T
+    key: Any?
 ) {
-    val registry = LocalScopedViewModelStoreOwner.current
-        ?: error("ScopedViewModelStoreOwner not provided! Please wrap your root composable with ProvideScopedViewModelStoreOwner { ... }")
+    val registry = LocalSharedViewModelRegistry.current
+        ?: error("SharedViewModelRegistry not provided! Please wrap your root composable with ProvideSharedViewModelRegistry { ... }")
 
-    val owner = remember { registry.getOrPut(T::class, factory) }
+    remember { registry.getOrPut(T::class, SharedViewModelStore()) }
 
     LaunchedEffect(key) {
         if (!shouldKeep()) {
