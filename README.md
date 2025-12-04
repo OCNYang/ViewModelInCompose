@@ -1,6 +1,6 @@
 # ViewModelInCompose
 
-A Kotlin Multiplatform library for sharing ViewModels across multiple screens in Compose Multiplatform.
+A Kotlin Multiplatform library providing enhanced ViewModel utilities for Compose Multiplatform.
 
 ## Platforms
 
@@ -9,28 +9,13 @@ A Kotlin Multiplatform library for sharing ViewModels across multiple screens in
 - Desktop (JVM)
 - Web (JS/Wasm)
 
-## SharedViewModel
+## Features
 
-SharedViewModel allows multiple screens to share the same ViewModel instance, with automatic cleanup when all sharing screens are removed from the navigation stack.
+- **LaunchedEffectOnce**: Execute side effects only once per page lifecycle
+- **EventEffect**: Lifecycle-aware one-time event handling from ViewModel to UI
+- **SharedViewModel**: Share ViewModels across multiple screens with automatic lifecycle management
 
-### Features
-
-- **Automatic Lifecycle Management**: The shared ViewModel is automatically cleared when all screens that use it are removed from the navigation stack
-- **No Manual Passing Required**: Access the shared ViewModel from any `@Composable` function without passing it through parameters
-- **Type-Safe Scope Definition**: Use `object` to define scopes with compile-time type safety
-- **Configuration Change Survival**: Shared ViewModels survive configuration changes (like screen rotation)
-
-### Comparison with Route-Scoped ViewModel
-
-| Feature | SharedViewModel | Route-Scoped ViewModel |
-|---------|-----------------|----------------------|
-| **Scope Definition** | Custom scope with `SharedScope` | Tied to navigation route lifecycle |
-| **Cleanup Timing** | When all `includedRoutes` leave the stack | When the route is popped |
-| **Access Method** | `getSharedViewModelStore<Scope>()` anywhere | Must pass from route entry point |
-| **Use Case** | Share data across multiple related screens | Single screen or parent-child hierarchy |
-| **Nested Navigation** | Supports sharing across nested nav graphs | Limited to single nav graph |
-
-### Installation
+## Installation
 
 ```kotlin
 // build.gradle.kts
@@ -39,12 +24,159 @@ dependencies {
 }
 ```
 
+---
+
+## LaunchedEffectOnce
+
+A `LaunchedEffect` that executes only once per page lifecycle, surviving recomposition and configuration changes.
+
+### When to Use
+
+- One-time initialization (data loading, analytics tracking)
+- Side effects that should not repeat on recomposition or screen rotation
+
+### Comparison with Standard LaunchedEffect
+
+| Behavior | LaunchedEffect | LaunchedEffectOnce |
+|----------|---------------|-------------------|
+| Recomposition | May re-execute | Does not re-execute |
+| Configuration change | Re-executes | Does not re-execute |
+| Page recreation | Re-executes | Re-executes |
+
+### Usage
+
+```kotlin
+@Composable
+fun MyScreen() {
+    // Executes only once per page lifecycle
+    LaunchedEffectOnce {
+        viewModel.loadData()
+        analytics.trackPageView()
+    }
+}
+```
+
+### With Keys
+
+```kotlin
+@Composable
+fun UserScreen(userId: String) {
+    // Re-executes only when userId changes
+    LaunchedEffectOnce(userId) {
+        viewModel.loadUser(userId)
+    }
+}
+```
+
+### Multiple Independent Effects
+
+```kotlin
+@Composable
+fun MyScreen() {
+    // Use viewModelKey to distinguish different effects
+    LaunchedEffectOnce(viewModelKey = "loadData") {
+        viewModel.loadData()
+    }
+
+    LaunchedEffectOnce(viewModelKey = "analytics") {
+        analytics.trackPageView()
+    }
+}
+```
+
+---
+
+## EventEffect
+
+Lifecycle-aware event collection for handling one-time UI events from ViewModel.
+
+### When to Use
+
+- Navigation events
+- Showing toasts or snackbars
+- One-time UI actions triggered by ViewModel
+
+### Features
+
+- Lifecycle-aware: only collects events when UI is visible
+- Events are guaranteed to be delivered (won't be lost during config changes)
+- Each event is consumed exactly once
+
+### Usage
+
+#### 1. Define Events in ViewModel
+
+```kotlin
+class MyViewModel : ViewModel() {
+    private val _events = EventChannel<UiEvent>()
+    val events: Flow<UiEvent> = _events.flow
+
+    fun onSubmit() {
+        viewModelScope.launch {
+            // Do some work...
+            _events.send(UiEvent.ShowToast("Success!"))
+            _events.send(UiEvent.NavigateBack)
+        }
+    }
+}
+
+sealed interface UiEvent {
+    data class ShowToast(val message: String) : UiEvent
+    data object NavigateBack : UiEvent
+}
+```
+
+#### 2. Collect Events in Composable
+
+```kotlin
+@Composable
+fun MyScreen(viewModel: MyViewModel) {
+    EventEffect(viewModel.events) { event ->
+        when (event) {
+            is UiEvent.ShowToast -> showToast(event.message)
+            is UiEvent.NavigateBack -> navigator.navigateBack()
+        }
+    }
+
+    // UI content...
+}
+```
+
+### API Reference
+
+| API | Description |
+|-----|-------------|
+| `EventChannel<T>` | Channel-based event emitter for ViewModel |
+| `EventChannel.send()` | Suspending function to emit an event |
+| `EventChannel.trySend()` | Non-suspending event emission (may drop if buffer full) |
+| `EventEffect()` | Composable to collect and handle events |
+
+---
+
+## SharedViewModel
+
+Share ViewModels across multiple screens with automatic cleanup when all sharing screens are removed from the navigation stack.
+
+### When to Use
+
+- Multiple screens need to share the same ViewModel instance
+- Data should persist while navigating between related screens
+- ViewModel should be cleared when leaving the entire flow
+
+### Comparison with Route-Scoped ViewModel
+
+| Feature | SharedViewModel | Route-Scoped ViewModel |
+|---------|-----------------|----------------------|
+| Scope Definition | Custom scope with `SharedScope` | Tied to navigation route lifecycle |
+| Cleanup Timing | When all `includedRoutes` leave the stack | When the route is popped |
+| Access Method | `getSharedViewModelStore<Scope>()` anywhere | Must pass from route entry point |
+| Nested Navigation | Supports sharing across nested nav graphs | Limited to single nav graph |
+
 ### Quick Start
 
 #### 1. Define a Scope
 
 ```kotlin
-// Define a scope as an object
 object OrderFlowScope : SharedScope(
     includedRoutes = setOf(Route.Cart::class, Route.Checkout::class, Route.Payment::class)
 )
@@ -56,8 +188,7 @@ object OrderFlowScope : SharedScope(
 @Composable
 fun App() {
     ProvideSharedViewModelRegistry {
-        val navController = rememberNavController()
-        MyNavHost(navController)
+        MyNavHost()
     }
 }
 ```
@@ -67,7 +198,6 @@ fun App() {
 ```kotlin
 @Composable
 fun MyNavHost(navController: NavHostController) {
-    // Collect current route stack
     val backStack by navController.currentBackStack.collectAsState()
     val routesInStack = remember(backStack) {
         backStack.mapNotNull { entry ->
@@ -75,7 +205,6 @@ fun MyNavHost(navController: NavHostController) {
         }.toSet()
     }
 
-    // Register scope
     RegisterSharedScope(routesInStack, OrderFlowScope)
 
     NavHost(navController, startDestination = Route.Cart) {
@@ -91,17 +220,9 @@ fun MyNavHost(navController: NavHostController) {
 ```kotlin
 @Composable
 fun CartScreen() {
-    // Option 1: Get store and use viewModel
-    val store = getSharedViewModelStore<OrderFlowScope>()
-    val orderVm: OrderViewModel = viewModel(viewModelStoreOwner = store) {
-        OrderViewModel()
-    }
-
-    // Option 2: Use convenience function
     val orderVm = sharedViewModel<OrderFlowScope, OrderViewModel> {
         OrderViewModel()
     }
-
     // Use orderVm...
 }
 
@@ -118,8 +239,6 @@ fun CheckoutScreen() {
 
 #### Scenario 1: Sibling Screens Sharing ViewModel
 
-When multiple screens at the same navigation level need to share data:
-
 ```kotlin
 // Cart -> Checkout -> Payment (linear flow)
 object OrderFlowScope : SharedScope(
@@ -127,64 +246,18 @@ object OrderFlowScope : SharedScope(
 )
 ```
 
-When the user completes payment and navigates away from all three screens, the `OrderViewModel` is automatically cleared.
+When the user leaves all three screens, the `OrderViewModel` is automatically cleared.
 
 #### Scenario 2: Parent Route with Nested Navigation
 
-When a parent route contains nested navigation and needs to share ViewModel with child screens:
-
 ```kotlin
-// Main route structure:
-// - Route.Home
-// - Route.Dashboard (parent with nested nav)
-//   - Route.Dashboard.Overview (nested)
-//   - Route.Dashboard.Analytics (nested)
-//   - Route.Dashboard.Settings (nested)
-
-// IMPORTANT: includedRoutes should contain the PARENT route, not the nested routes
+// IMPORTANT: Use PARENT route, not nested routes
 object DashboardScope : SharedScope(
     includedRoutes = setOf(Route.Dashboard::class)  // Parent route only!
 )
 ```
 
-**Why use parent route instead of nested routes?**
-
-In nested navigation, when you navigate between nested destinations:
-- The parent route (`Route.Dashboard`) stays in the back stack
-- Only the nested content changes
-
-If you included nested routes like `Route.Dashboard.Overview::class`, the scope would be cleared when switching between nested destinations because those specific routes leave and re-enter the stack.
-
-By using the parent route, the scope remains active as long as the user is anywhere within the Dashboard section.
-
-```kotlin
-@Composable
-fun DashboardNavHost(navController: NavHostController) {
-    val backStack by navController.currentBackStack.collectAsState()
-    val routesInStack = remember(backStack) {
-        backStack.mapNotNull { it.destination.route?.let { getRouteClass(it) } }.toSet()
-    }
-
-    // Register with parent route monitoring
-    RegisterSharedScope(routesInStack, DashboardScope)
-
-    NavHost(navController, startDestination = "overview") {
-        composable("overview") {
-            // Access shared ViewModel
-            val dashboardVm = sharedViewModel<DashboardScope, DashboardViewModel> {
-                DashboardViewModel()
-            }
-            OverviewScreen(dashboardVm)
-        }
-        composable("analytics") {
-            val dashboardVm = sharedViewModel<DashboardScope, DashboardViewModel> {
-                DashboardViewModel()
-            }
-            AnalyticsScreen(dashboardVm)
-        }
-    }
-}
-```
+In nested navigation, the parent route stays in the back stack while nested content changes. Using the parent route keeps the scope active throughout the entire section.
 
 ### API Reference
 
@@ -196,20 +269,7 @@ fun DashboardNavHost(navController: NavHostController) {
 | `getSharedViewModelStore<T>()` | Gets the ViewModelStoreOwner for a scope |
 | `sharedViewModel<S, T>()` | Convenience function to get a shared ViewModel |
 
-### Architecture
-
-```
-Activity/Fragment ViewModelStore
-  └─ SharedViewModelRegistry (ViewModel, survives config changes)
-      └─ Map<KClass<SharedScope>, SharedViewModelStore>
-          ├─ OrderFlowScope::class → SharedViewModelStore
-          │   └─ ViewModelStore
-          │       └─ OrderViewModel
-          ├─ DashboardScope::class → SharedViewModelStore
-          │   └─ ViewModelStore
-          │       └─ DashboardViewModel
-          └─ ...
-```
+---
 
 ## License
 
