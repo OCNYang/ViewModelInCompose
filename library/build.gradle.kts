@@ -6,7 +6,11 @@ plugins {
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    `maven-publish`
 }
+
+group = "com.github.OCNYang"
+version = "1.0.0"
 
 kotlin {
     // Android
@@ -21,15 +25,17 @@ kotlin {
         publishLibraryVariants("release", "debug")
     }
 
-    // iOS
-    listOf(
-        iosX64(),
-        iosArm64(),
-        iosSimulatorArm64()
-    ).forEach { iosTarget ->
-        iosTarget.binaries.framework {
-            baseName = "ViewModelInComposeKit"
-            isStatic = true
+    // iOS - Skip on JitPack (Linux environment can't build iOS)
+    if (findProperty("skipIosTargets") != "true") {
+        listOf(
+            iosX64(),
+            iosArm64(),
+            iosSimulatorArm64()
+        ).forEach { iosTarget ->
+            iosTarget.binaries.framework {
+                baseName = "ViewModelInComposeKit"
+                isStatic = true
+            }
         }
     }
 

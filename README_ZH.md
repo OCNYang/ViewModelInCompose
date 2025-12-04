@@ -1,3 +1,6 @@
+> [!NOTE]
+> 如果还有更多实用的使用方式，请告诉我，或创建一个 pull request
+
 # ViewModelInCompose
 
 [![](https://jitpack.io/v/OCNYang/ViewModelInCompose.svg)](https://jitpack.io/#OCNYang/ViewModelInCompose)
