@@ -1,5 +1,9 @@
 # ViewModelInCompose
 
+[![](https://jitpack.io/v/OCNYang/ViewModelInCompose.svg)](https://jitpack.io/#OCNYang/ViewModelInCompose)
+
+[中文文档](README_ZH.md)
+
 A Kotlin Multiplatform library providing enhanced ViewModel utilities for Compose Multiplatform.
 
 ## Platforms
@@ -13,22 +17,37 @@ A Kotlin Multiplatform library providing enhanced ViewModel utilities for Compos
 
 - **LaunchedEffectOnce**: Execute side effects only once per page lifecycle
 - **EventEffect**: Lifecycle-aware one-time event handling from ViewModel to UI
-- **SharedViewModel**: Share ViewModels across multiple screens with automatic lifecycle management
+- **StateBus**: Cross-screen state sharing with automatic lifecycle management
+- **SharedViewModel**: Share ViewModels across multiple screens with automatic cleanup
 
 ## Installation
 
+Add the JitPack repository to your `settings.gradle.kts`:
+
 ```kotlin
-// build.gradle.kts
-dependencies {
-    implementation("com.ocnyang:viewmodelincompose:<version>")
+dependencyResolutionManagement {
+    repositories {
+        // ...
+        maven("https://jitpack.io")
+    }
 }
 ```
+
+Add the dependency to your module's `build.gradle.kts`:
+
+```kotlin
+dependencies {
+    implementation("com.github.OCNYang:ViewModelInCompose:<version>")
+}
+```
+
+> Replace `<version>` with the latest version shown in the badge above, or check [releases](https://github.com/OCNYang/ViewModelInCompose/releases).
 
 ---
 
 ## LaunchedEffectOnce
 
-A `LaunchedEffect` that executes only once per page lifecycle, surviving recomposition and configuration changes.
+A `LaunchedEffect` that executes only once per page lifecycle, surviving recomposition and configuration changes.When jumping to the next page and returning, it will not be re-executed. It will only be executed when reopening after exiting the current page.
 
 ### When to Use
 
@@ -38,10 +57,11 @@ A `LaunchedEffect` that executes only once per page lifecycle, surviving recompo
 ### Comparison with Standard LaunchedEffect
 
 | Behavior | LaunchedEffect | LaunchedEffectOnce |
-|----------|---------------|-------------------|
+|----------|----------------|-------------------|
 | Recomposition | May re-execute | Does not re-execute |
-| Configuration change | Re-executes | Does not re-execute |
-| Page recreation | Re-executes | Re-executes |
+| When returning from the next page | Re-execute     | Does not re-execute |
+| Configuration change | Re-executes    | Does not re-execute |
+| Page recreation | Re-executes    | Re-executes |
 
 ### Usage
 
@@ -64,22 +84,6 @@ fun UserScreen(userId: String) {
     // Re-executes only when userId changes
     LaunchedEffectOnce(userId) {
         viewModel.loadUser(userId)
-    }
-}
-```
-
-### Multiple Independent Effects
-
-```kotlin
-@Composable
-fun MyScreen() {
-    // Use viewModelKey to distinguish different effects
-    LaunchedEffectOnce(viewModelKey = "loadData") {
-        viewModel.loadData()
-    }
-
-    LaunchedEffectOnce(viewModelKey = "analytics") {
-        analytics.trackPageView()
     }
 }
 ```
@@ -113,7 +117,6 @@ class MyViewModel : ViewModel() {
 
     fun onSubmit() {
         viewModelScope.launch {
-            // Do some work...
             _events.send(UiEvent.ShowToast("Success!"))
             _events.send(UiEvent.NavigateBack)
         }
@@ -137,19 +140,113 @@ fun MyScreen(viewModel: MyViewModel) {
             is UiEvent.NavigateBack -> navigator.navigateBack()
         }
     }
-
-    // UI content...
 }
+```
+
+---
+
+## StateBus
+
+Cross-screen state sharing solution with automatic lifecycle management.
+
+### When to Use
+
+- Pass data between screens (e.g., selection result from screen B back to screen A)
+- Share temporary state across multiple screens
+- Need automatic cleanup when no screens are observing
+
+### Features
+
+- **Automatic Listener Tracking**: Tracks observer count automatically
+- **Automatic Cleanup**: State is cleared when no observers remain
+- **Thread-Safe**: Uses synchronized locks and atomic counters
+- **Configuration Change Survival**: State persists across screen rotation
+- **Process Death Recovery**: Android platform supports state restoration via SavedStateHandle
+- **Kotlin Multiplatform**: Works on all supported platforms
+
+### Quick Start
+
+#### 1. Provide StateBus at Root
+
+```kotlin
+@Composable
+fun App() {
+    ProvideStateBus {
+        MyNavHost()
+    }
+}
+```
+
+#### 2. Set State (Sender Screen)
+
+```kotlin
+@Composable
+fun ScreenB() {
+    val stateBus = LocalStateBus.current
+
+    Button(onClick = {
+        stateBus.setState<Person>(selectedPerson)
+        navigator.navigateBack()
+    }) {
+        Text("Confirm Selection")
+    }
+}
+```
+
+#### 3. Observe State (Receiver Screen)
+
+```kotlin
+@Composable
+fun ScreenA() {
+    val stateBus = LocalStateBus.current
+    val person = stateBus.observeState<Person?>()
+
+    Text("Selected: ${person?.name ?: "None"}")
+}
+```
+
+### Using Custom Keys
+
+When using generic types that may conflict (e.g., `Result<String>` vs `Result<Int>`), specify a custom key:
+
+```kotlin
+// Use explicit keys to avoid type erasure conflicts
+val userResult = stateBus.observeState<Result<User>?>(stateKey = "userResult")
+val orderResult = stateBus.observeState<Result<Order>?>(stateKey = "orderResult")
 ```
 
 ### API Reference
 
 | API | Description |
 |-----|-------------|
-| `EventChannel<T>` | Channel-based event emitter for ViewModel |
-| `EventChannel.send()` | Suspending function to emit an event |
-| `EventChannel.trySend()` | Non-suspending event emission (may drop if buffer full) |
-| `EventEffect()` | Composable to collect and handle events |
+| `ProvideStateBus` | Provides StateBus to the composition tree |
+| `LocalStateBus.current` | Gets the current StateBus instance |
+| `observeState<T>()` | Observes state with automatic listener tracking |
+| `setState<T>()` | Sets state value |
+| `removeState<T>()` | Manually removes state |
+| `hasState()` | Checks if state exists |
+
+### Architecture
+
+```
+Activity/Fragment ViewModelStore
+  └─ StateBus (ViewModel)
+      └─ stateDataMap (thread-safe state cache)
+      └─ persistence (platform-specific, SavedStateHandle on Android)
+
+NavBackStackEntry (per screen)
+  └─ StateBusListenerViewModel
+      └─ Registers/unregisters listener on lifecycle
+```
+
+### Platform Notes
+
+| Platform | Process Death Recovery |
+|----------|----------------------|
+| Android | ✅ Supported (SavedStateHandle) |
+| iOS | ❌ Not supported |
+| Desktop | ❌ Not supported |
+| Web | ❌ Not supported |
 
 ---
 
@@ -163,14 +260,14 @@ Share ViewModels across multiple screens with automatic cleanup when all sharing
 - Data should persist while navigating between related screens
 - ViewModel should be cleared when leaving the entire flow
 
-### Comparison with Route-Scoped ViewModel
+### Comparison with StateBus
 
-| Feature | SharedViewModel | Route-Scoped ViewModel |
-|---------|-----------------|----------------------|
-| Scope Definition | Custom scope with `SharedScope` | Tied to navigation route lifecycle |
-| Cleanup Timing | When all `includedRoutes` leave the stack | When the route is popped |
-| Access Method | `getSharedViewModelStore<Scope>()` anywhere | Must pass from route entry point |
-| Nested Navigation | Supports sharing across nested nav graphs | Limited to single nav graph |
+| Feature | SharedViewModel | StateBus |
+|---------|-----------------|----------|
+| **Purpose** | Share ViewModel instances | Share state values |
+| **Scope** | Defined by `SharedScope` | Global within StateBus |
+| **Cleanup** | When all `includedRoutes` leave stack | When no observers remain |
+| **Use Case** | Complex business logic sharing | Simple data passing |
 
 ### Quick Start
 
@@ -223,7 +320,6 @@ fun CartScreen() {
     val orderVm = sharedViewModel<OrderFlowScope, OrderViewModel> {
         OrderViewModel()
     }
-    // Use orderVm...
 }
 
 @Composable
@@ -240,13 +336,10 @@ fun CheckoutScreen() {
 #### Scenario 1: Sibling Screens Sharing ViewModel
 
 ```kotlin
-// Cart -> Checkout -> Payment (linear flow)
 object OrderFlowScope : SharedScope(
     includedRoutes = setOf(Route.Cart::class, Route.Checkout::class, Route.Payment::class)
 )
 ```
-
-When the user leaves all three screens, the `OrderViewModel` is automatically cleared.
 
 #### Scenario 2: Parent Route with Nested Navigation
 
@@ -256,18 +349,6 @@ object DashboardScope : SharedScope(
     includedRoutes = setOf(Route.Dashboard::class)  // Parent route only!
 )
 ```
-
-In nested navigation, the parent route stays in the back stack while nested content changes. Using the parent route keeps the scope active throughout the entire section.
-
-### API Reference
-
-| API | Description |
-|-----|-------------|
-| `SharedScope` | Base class for defining a shared scope |
-| `ProvideSharedViewModelRegistry` | Provides the registry to the composition tree |
-| `RegisterSharedScope` | Registers a scope and monitors route stack for cleanup |
-| `getSharedViewModelStore<T>()` | Gets the ViewModelStoreOwner for a scope |
-| `sharedViewModel<S, T>()` | Convenience function to get a shared ViewModel |
 
 ---
 

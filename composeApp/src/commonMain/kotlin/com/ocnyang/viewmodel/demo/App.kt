@@ -33,7 +33,9 @@ import org.jetbrains.compose.ui.tooling.preview.Preview
 private enum class Screen {
     Home,
     EventEffectDemo,
-    LaunchedEffectOnceDemo
+    LaunchedEffectOnceDemo,
+    SharedViewModelDemo,
+    StateBusDemo
 }
 
 @Composable
@@ -48,7 +50,9 @@ fun App() {
                     HomeScreen(
                         modifier = Modifier.padding(paddingValues),
                         onNavigateToEventEffect = { currentScreen = Screen.EventEffectDemo },
-                        onNavigateToLaunchedEffectOnce = { currentScreen = Screen.LaunchedEffectOnceDemo }
+                        onNavigateToLaunchedEffectOnce = { currentScreen = Screen.LaunchedEffectOnceDemo },
+                        onNavigateToSharedViewModel = { currentScreen = Screen.SharedViewModelDemo },
+                        onNavigateToStateBus = { currentScreen = Screen.StateBusDemo }
                     )
                 }
                 Screen.EventEffectDemo -> {
@@ -59,6 +63,16 @@ fun App() {
                 }
                 Screen.LaunchedEffectOnceDemo -> {
                     LaunchedEffectOnceDemo(
+                        onBack = { currentScreen = Screen.Home }
+                    )
+                }
+                Screen.SharedViewModelDemo -> {
+                    SharedViewModelDemo(
+                        onBack = { currentScreen = Screen.Home }
+                    )
+                }
+                Screen.StateBusDemo -> {
+                    StateBusDemo(
                         onBack = { currentScreen = Screen.Home }
                     )
                 }
@@ -74,7 +88,9 @@ fun App() {
 private fun HomeScreen(
     modifier: Modifier = Modifier,
     onNavigateToEventEffect: () -> Unit,
-    onNavigateToLaunchedEffectOnce: () -> Unit
+    onNavigateToLaunchedEffectOnce: () -> Unit,
+    onNavigateToSharedViewModel: () -> Unit,
+    onNavigateToStateBus: () -> Unit
 ) {
     Column(
         modifier = modifier
@@ -108,6 +124,18 @@ private fun HomeScreen(
 
         Button(onClick = onNavigateToLaunchedEffectOnce) {
             Text("LaunchedEffectOnce Demo")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(onClick = onNavigateToSharedViewModel) {
+            Text("SharedViewModel Demo")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(onClick = onNavigateToStateBus) {
+            Text("StateBus Demo")
         }
     }
 }

@@ -1,5 +1,9 @@
 # ViewModelInCompose
 
+[![](https://jitpack.io/v/OCNYang/ViewModelInCompose.svg)](https://jitpack.io/#OCNYang/ViewModelInCompose)
+
+[English](README.md)
+
 一个为 Compose Multiplatform 提供增强 ViewModel 工具的 Kotlin 多平台库。
 
 ## 支持平台
@@ -12,23 +16,38 @@
 ## 功能
 
 - **LaunchedEffectOnce**：在页面生命周期内只执行一次副作用
-- **EventEffect**：生命周期感知的一次性事件处理，用于 ViewModel 到 UI 的通信
-- **SharedViewModel**：跨多个页面共享 ViewModel，自动管理生命周期
+- **EventEffect**：生命周期感知的一次性事件处理
+- **StateBus**：跨页面状态共享，自动管理生命周期
+- **SharedViewModel**：跨多个页面共享 ViewModel，自动清理
 
 ## 安装
 
+在 `settings.gradle.kts` 中添加 JitPack 仓库：
+
 ```kotlin
-// build.gradle.kts
-dependencies {
-    implementation("com.ocnyang:viewmodelincompose:<version>")
+dependencyResolutionManagement {
+    repositories {
+        // ...
+        maven("https://jitpack.io")
+    }
 }
 ```
+
+在模块的 `build.gradle.kts` 中添加依赖：
+
+```kotlin
+dependencies {
+    implementation("com.github.OCNYang:ViewModelInCompose:<version>")
+}
+```
+
+> 将 `<version>` 替换为上方徽章显示的最新版本，或查看 [releases](https://github.com/OCNYang/ViewModelInCompose/releases)。
 
 ---
 
 ## LaunchedEffectOnce
 
-在页面生命周期内只执行一次的 `LaunchedEffect`，不受重组和配置变更影响。
+在页面生命周期内只执行一次的 `LaunchedEffect`，不受重组和配置变更影响。当跳转到下一页面并返回时不会重新执行，只会在退出当前页面后重新打开时执行。
 
 ### 适用场景
 
@@ -37,13 +56,14 @@ dependencies {
 
 ### 与标准 LaunchedEffect 对比
 
-| 行为 | LaunchedEffect | LaunchedEffectOnce |
-|------|---------------|-------------------|
-| 重组时 | 可能重新执行 | 不会重新执行 |
-| 配置变更时 | 重新执行 | 不会重新执行 |
-| 页面重建时 | 重新执行 | 重新执行 |
+| 行为       | LaunchedEffect | LaunchedEffectOnce |
+|----------|-------------|-------------------|
+| 重组时      | 可能重新执行 | 不会重新执行 |
+| 从下一页面返回时 | 重新执行 | 不会重新执行 |
+| 配置变更时    | 重新执行 | 不会重新执行 |
+| 页面重建时    | 重新执行 | 重新执行 |
 
-### 基本用法
+### 用法
 
 ```kotlin
 @Composable
@@ -64,22 +84,6 @@ fun UserScreen(userId: String) {
     // 仅当 userId 变化时重新执行
     LaunchedEffectOnce(userId) {
         viewModel.loadUser(userId)
-    }
-}
-```
-
-### 多个独立的 Effect
-
-```kotlin
-@Composable
-fun MyScreen() {
-    // 使用 viewModelKey 区分不同的 effect
-    LaunchedEffectOnce(viewModelKey = "loadData") {
-        viewModel.loadData()
-    }
-
-    LaunchedEffectOnce(viewModelKey = "analytics") {
-        analytics.trackPageView()
     }
 }
 ```
@@ -113,7 +117,6 @@ class MyViewModel : ViewModel() {
 
     fun onSubmit() {
         viewModelScope.launch {
-            // 执行一些操作...
             _events.send(UiEvent.ShowToast("成功！"))
             _events.send(UiEvent.NavigateBack)
         }
@@ -137,19 +140,113 @@ fun MyScreen(viewModel: MyViewModel) {
             is UiEvent.NavigateBack -> navigator.navigateBack()
         }
     }
-
-    // UI 内容...
 }
+```
+
+---
+
+## StateBus
+
+跨页面状态共享解决方案，自动管理生命周期。
+
+### 适用场景
+
+- 页面间传递数据（如从页面 B 返回选择结果到页面 A）
+- 多个页面共享临时状态
+- 需要在没有观察者时自动清理
+
+### 特性
+
+- **自动监听者追踪**：自动追踪观察者数量
+- **自动清理**：当没有观察者时自动清理状态
+- **线程安全**：使用同步锁和原子计数器
+- **配置变更存活**：屏幕旋转时状态保持
+- **进程死亡恢复**：Android 平台通过 SavedStateHandle 支持状态恢复
+- **Kotlin 多平台**：支持所有平台
+
+### 快速开始
+
+#### 1. 在根组件提供 StateBus
+
+```kotlin
+@Composable
+fun App() {
+    ProvideStateBus {
+        MyNavHost()
+    }
+}
+```
+
+#### 2. 设置状态（发送方页面）
+
+```kotlin
+@Composable
+fun ScreenB() {
+    val stateBus = LocalStateBus.current
+
+    Button(onClick = {
+        stateBus.setState<Person>(selectedPerson)
+        navigator.navigateBack()
+    }) {
+        Text("确认选择")
+    }
+}
+```
+
+#### 3. 观察状态（接收方页面）
+
+```kotlin
+@Composable
+fun ScreenA() {
+    val stateBus = LocalStateBus.current
+    val person = stateBus.observeState<Person?>()
+
+    Text("已选择: ${person?.name ?: "无"}")
+}
+```
+
+### 使用自定义 Key
+
+当使用可能冲突的泛型类型时（如 `Result<String>` vs `Result<Int>`），指定自定义 key：
+
+```kotlin
+// 使用显式 key 避免类型擦除冲突
+val userResult = stateBus.observeState<Result<User>?>(stateKey = "userResult")
+val orderResult = stateBus.observeState<Result<Order>?>(stateKey = "orderResult")
 ```
 
 ### API 参考
 
 | API | 描述 |
 |-----|------|
-| `EventChannel<T>` | 用于 ViewModel 的基于 Channel 的事件发射器 |
-| `EventChannel.send()` | 挂起函数，发送事件 |
-| `EventChannel.trySend()` | 非挂起发送（缓冲区满时可能丢弃） |
-| `EventEffect()` | 用于收集和处理事件的 Composable |
+| `ProvideStateBus` | 向组合树提供 StateBus |
+| `LocalStateBus.current` | 获取当前 StateBus 实例 |
+| `observeState<T>()` | 观察状态，自动追踪监听者 |
+| `setState<T>()` | 设置状态值 |
+| `removeState<T>()` | 手动移除状态 |
+| `hasState()` | 检查状态是否存在 |
+
+### 架构
+
+```
+Activity/Fragment ViewModelStore
+  └─ StateBus (ViewModel)
+      └─ stateDataMap (线程安全的状态缓存)
+      └─ persistence (平台特定，Android 使用 SavedStateHandle)
+
+NavBackStackEntry (每个页面)
+  └─ StateBusListenerViewModel
+      └─ 在生命周期中注册/取消注册监听者
+```
+
+### 平台说明
+
+| 平台 | 进程死亡恢复 |
+|------|------------|
+| Android | ✅ 支持 (SavedStateHandle) |
+| iOS | ❌ 不支持 |
+| Desktop | ❌ 不支持 |
+| Web | ❌ 不支持 |
 
 ---
 
@@ -163,14 +260,14 @@ fun MyScreen(viewModel: MyViewModel) {
 - 在相关页面之间导航时数据应保持
 - 离开整个流程时 ViewModel 应被清理
 
-### 与路由作用域 ViewModel 对比
+### 与 StateBus 对比
 
-| 特性 | SharedViewModel | 路由作用域 ViewModel |
-|------|-----------------|---------------------|
-| 作用域定义 | 使用 `SharedScope` 自定义 | 绑定到导航路由生命周期 |
-| 清理时机 | 当所有 `includedRoutes` 离开导航栈时 | 当路由被弹出时 |
-| 访问方式 | 任意位置使用 `getSharedViewModelStore<Scope>()` | 必须从路由入口点传递 |
-| 嵌套导航 | 支持跨嵌套导航图共享 | 仅限单个导航图 |
+| 特性 | SharedViewModel | StateBus |
+|------|-----------------|----------|
+| **用途** | 共享 ViewModel 实例 | 共享状态值 |
+| **作用域** | 由 `SharedScope` 定义 | StateBus 内全局 |
+| **清理时机** | 当所有 `includedRoutes` 离开栈时 | 当没有观察者时 |
+| **使用场景** | 复杂业务逻辑共享 | 简单数据传递 |
 
 ### 快速开始
 
@@ -223,7 +320,6 @@ fun CartScreen() {
     val orderVm = sharedViewModel<OrderFlowScope, OrderViewModel> {
         OrderViewModel()
     }
-    // 使用 orderVm...
 }
 
 @Composable
@@ -240,13 +336,10 @@ fun CheckoutScreen() {
 #### 场景 1：同级页面共享 ViewModel
 
 ```kotlin
-// Cart -> Checkout -> Payment（线性流程）
 object OrderFlowScope : SharedScope(
     includedRoutes = setOf(Route.Cart::class, Route.Checkout::class, Route.Payment::class)
 )
 ```
-
-当用户离开这三个页面后，`OrderViewModel` 会自动清理。
 
 #### 场景 2：父路由与嵌套导航
 
@@ -256,18 +349,6 @@ object DashboardScope : SharedScope(
     includedRoutes = setOf(Route.Dashboard::class)  // 只传父路由！
 )
 ```
-
-在嵌套导航中，父路由保持在导航栈中，只有嵌套内容在变化。使用父路由可以让 Scope 在整个区域内保持活跃。
-
-### API 参考
-
-| API | 描述 |
-|-----|------|
-| `SharedScope` | 定义共享作用域的基类 |
-| `ProvideSharedViewModelRegistry` | 向组合树提供 Registry |
-| `RegisterSharedScope` | 注册 Scope 并监控路由栈以进行清理 |
-| `getSharedViewModelStore<T>()` | 获取指定 Scope 的 ViewModelStoreOwner |
-| `sharedViewModel<S, T>()` | 获取共享 ViewModel 的便捷函数 |
 
 ---
 
