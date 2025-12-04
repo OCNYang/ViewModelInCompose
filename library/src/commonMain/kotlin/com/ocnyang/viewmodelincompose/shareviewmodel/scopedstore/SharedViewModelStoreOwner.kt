@@ -5,33 +5,34 @@ import androidx.lifecycle.ViewModelStoreOwner
 import kotlin.reflect.KClass
 
 /**
- * 共享 ViewModel 的 StoreOwner 基类
+ * Base class for shared ViewModel StoreOwner.
  *
- * 用户通过继承此类来定义一组页面共享的 Scope。
- * 当导航栈中不再包含任何 [includedRoutes] 中定义的页面时，该 Scope 内的所有 ViewModel 会被自动清理。
+ * Users extend this class to define a scope shared by a group of pages.
+ * When the navigation stack no longer contains any routes defined in [includedRoutes],
+ * all ViewModels in this scope will be automatically cleared.
  *
- * ## 定义 Scope
+ * ## Defining a Scope
  *
  * ```kotlin
- * // 定义 Home 和 Order 页面共享的 Scope
+ * // Define a scope shared by Home and Order pages
  * class OrderFlowStoreOwner : SharedViewModelStoreOwner(
  *     includedRoutes = setOf(Route.Home::class, Route.Order::class)
  * )
  *
- * // 定义 Checkout 流程的 Scope
+ * // Define a scope for the Checkout flow
  * class CheckoutStoreOwner : SharedViewModelStoreOwner(
  *     includedRoutes = setOf(Route.Cart::class, Route.Payment::class, Route.Confirmation::class)
  * )
  * ```
  *
- * ## 使用流程
+ * ## Usage Flow
  *
- * 1. 在根路由提供 [ScopedViewModelStoreOwner]
- * 2. 在 NavHost 层级使用 [RegisterSharedStoreOwner] 注册（只需注册一次）
- * 3. 在页面中通过 [getSharedStoreOwner] 获取并使用
+ * 1. Provide [ScopedViewModelStoreOwner] at the root
+ * 2. Register using [RegisterSharedStoreOwner] at NavHost level (only once)
+ * 3. Use [getSharedStoreOwner] in screens to get the StoreOwner
  *
  * ```kotlin
- * // NavHost 层级注册
+ * // Register at NavHost level
  * @Composable
  * fun MyNavHost(navController: NavHostController) {
  *     val backStack by navController.currentBackStack.collectAsState()
@@ -39,7 +40,7 @@ import kotlin.reflect.KClass
  *         backStack.mapNotNull { it.destination.route?.let { getRouteClass(it) } }.toSet()
  *     }
  *
- *     // 注册 Scope（只需一次）
+ *     // Register scope (only once)
  *     RegisterSharedStoreOwner(routesInStack) { OrderFlowStoreOwner() }
  *
  *     NavHost(navController, startDestination = Route.Home) {
@@ -48,7 +49,7 @@ import kotlin.reflect.KClass
  *     }
  * }
  *
- * // 页面中使用
+ * // Use in screens
  * @Composable
  * fun HomeScreen() {
  *     val storeOwner = getSharedStoreOwner<OrderFlowStoreOwner>()
@@ -56,7 +57,7 @@ import kotlin.reflect.KClass
  * }
  * ```
  *
- * @param includedRoutes 包含在此 Scope 内的路由 KClass 集合
+ * @param includedRoutes Set of route KClasses included in this scope
  * @see ScopedViewModelStoreOwner
  * @see RegisterSharedStoreOwner
  * @see getSharedStoreOwner
@@ -70,29 +71,19 @@ abstract class SharedViewModelStoreOwner(
     override val viewModelStore: ViewModelStore get() = _viewModelStore
 
     /**
-     * 检查路由栈中是否包含此 Scope 的任一路由
+     * Checks if any route from this scope is in the navigation stack.
      *
-     * @param routesInStack 当前路由栈中的路由 KClass 集合
-     * @return true 如果路由栈中包含 [includedRoutes] 中的任一路由
+     * @param routesInStack Current routes in the navigation stack as KClass set
+     * @return true if the stack contains any route from [includedRoutes]
      */
     fun hasRouteInStack(routesInStack: Set<KClass<*>>): Boolean {
         return includedRoutes.any { it in routesInStack }
     }
 
     /**
-     * 检查当前路由是否在 Scope 内
+     * Clears all ViewModels in this StoreOwner.
      *
-     * @param currentRoute 当前路由的 KClass
-     * @return true 如果当前路由在 [includedRoutes] 中
-     */
-    fun isInScope(currentRoute: KClass<*>?): Boolean {
-        return currentRoute != null && currentRoute in includedRoutes
-    }
-
-    /**
-     * 清理所有 ViewModel
-     *
-     * 调用后，所有存储在此 StoreOwner 中的 ViewModel 的 `onCleared()` 会被调用
+     * After calling this, `onCleared()` will be called on all ViewModels stored in this StoreOwner.
      */
     fun clear() {
         _viewModelStore.clear()

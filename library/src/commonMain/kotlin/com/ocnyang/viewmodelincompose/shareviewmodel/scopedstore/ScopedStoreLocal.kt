@@ -21,10 +21,20 @@ import androidx.compose.runtime.staticCompositionLocalOf
  *     }
  * }
  *
- * // 2. Register in NavHost composable
- * composable<Route.Home> {
- *     RegisterSharedStoreOwner(currentRoute) { OrderFlowStoreOwner() }
- *     HomeScreen()
+ * // 2. Register in NavHost
+ * @Composable
+ * fun MyNavHost(navController: NavHostController) {
+ *     val backStack by navController.currentBackStack.collectAsState()
+ *     val routesInStack = remember(backStack) {
+ *         backStack.mapNotNull { it.destination.route?.let { getRouteClass(it) } }.toSet()
+ *     }
+ *
+ *     RegisterSharedStoreOwner(routesInStack) { OrderFlowStoreOwner() }
+ *
+ *     NavHost(navController, startDestination = Route.Home) {
+ *         composable<Route.Home> { HomeScreen() }
+ *         composable<Route.Order> { OrderScreen() }
+ *     }
  * }
  *
  * // 3. Use in screens

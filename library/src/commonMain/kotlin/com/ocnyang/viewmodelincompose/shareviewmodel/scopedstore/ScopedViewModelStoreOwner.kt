@@ -8,16 +8,16 @@ import kotlinx.atomicfu.locks.synchronized
 import kotlin.reflect.KClass
 
 /**
- * Scope 注册表
+ * Scope registry that manages all [SharedViewModelStoreOwner] instances and their lifecycles.
  *
- * 管理所有 [SharedViewModelStoreOwner] 的注册和生命周期。
- * 作为 ViewModel 实现，确保跨配置更改（如屏幕旋转）时保留状态。
+ * Implemented as a ViewModel to ensure state is preserved across configuration changes
+ * (like screen rotation).
  *
- * ## 架构
+ * ## Architecture
  *
  * ```
  * Activity/Fragment ViewModelStore
- *   └─ ScopedViewModelStoreOwner (ViewModel, 注册表)
+ *   └─ ScopedViewModelStoreOwner (ViewModel, registry)
  *       └─ Map<KClass, SharedViewModelStoreOwner>
  *           ├─ OrderFlowStoreOwner::class → OrderFlowStoreOwner
  *           │   └─ ViewModelStore
@@ -28,9 +28,9 @@ import kotlin.reflect.KClass
  *           └─ ...
  * ```
  *
- * ## 使用方式
+ * ## Usage
  *
- * 通过 [ProvideScopedViewModelStoreOwner] 在根路由提供：
+ * Provide via [ProvideScopedViewModelStoreOwner] at the root:
  *
  * ```kotlin
  * @Composable
@@ -50,18 +50,19 @@ class ScopedViewModelStoreOwner : ViewModel() {
     private val lock = SynchronizedObject()
 
     /**
-     * 已注册的 SharedViewModelStoreOwner 映射表
+     * Registry map of SharedViewModelStoreOwner instances
      */
     private val registry = mutableMapOf<KClass<out SharedViewModelStoreOwner>, SharedViewModelStoreOwner>()
 
     /**
-     * 获取或创建指定类型的 [SharedViewModelStoreOwner]
+     * Gets or creates a [SharedViewModelStoreOwner] of the specified type.
      *
-     * 如果已存在，返回现有实例；否则调用 factory 创建新实例并注册。
+     * If already exists, returns the existing instance; otherwise calls factory to create
+     * a new instance and registers it.
      *
-     * @param key StoreOwner 的 KClass
-     * @param factory 创建 StoreOwner 的工厂函数
-     * @return StoreOwner 实例
+     * @param key KClass of the StoreOwner
+     * @param factory Factory function to create the StoreOwner
+     * @return The StoreOwner instance
      */
     fun <T : SharedViewModelStoreOwner> getOrPut(
         key: KClass<T>,
@@ -74,11 +75,11 @@ class ScopedViewModelStoreOwner : ViewModel() {
     }
 
     /**
-     * 获取指定类型的 [SharedViewModelStoreOwner]
+     * Gets a [SharedViewModelStoreOwner] of the specified type.
      *
-     * @param key StoreOwner 的 KClass
-     * @return StoreOwner 实例
-     * @throws IllegalStateException 如果未注册
+     * @param key KClass of the StoreOwner
+     * @return The StoreOwner instance
+     * @throws IllegalStateException if not registered
      */
     fun <T : SharedViewModelStoreOwner> get(key: KClass<T>): T {
         return synchronized(lock) {
@@ -89,10 +90,10 @@ class ScopedViewModelStoreOwner : ViewModel() {
     }
 
     /**
-     * 获取指定类型的 [SharedViewModelStoreOwner]，未注册返回 null
+     * Gets a [SharedViewModelStoreOwner] of the specified type, or null if not registered.
      *
-     * @param key StoreOwner 的 KClass
-     * @return StoreOwner 实例，或 null
+     * @param key KClass of the StoreOwner
+     * @return The StoreOwner instance, or null
      */
     fun <T : SharedViewModelStoreOwner> getOrNull(key: KClass<T>): T? {
         return synchronized(lock) {
@@ -102,12 +103,12 @@ class ScopedViewModelStoreOwner : ViewModel() {
     }
 
     /**
-     * 清理指定 Scope
+     * Clears the specified scope.
      *
-     * 清理 StoreOwner 中的所有 ViewModel 并从注册表移除。
+     * Clears all ViewModels in the StoreOwner and removes it from the registry.
      *
-     * @param key StoreOwner 的 KClass
-     * @return true 如果已清理，false 如果不存在
+     * @param key KClass of the StoreOwner
+     * @return true if cleared, false if not exists
      */
     @PublishedApi
     internal fun clearScope(key: KClass<out SharedViewModelStoreOwner>): Boolean {
@@ -120,10 +121,10 @@ class ScopedViewModelStoreOwner : ViewModel() {
     }
 
     /**
-     * 检查指定 Scope 是否已注册
+     * Checks if the specified scope is registered.
      *
-     * @param key StoreOwner 的 KClass
-     * @return true 如果已注册
+     * @param key KClass of the StoreOwner
+     * @return true if registered
      */
     fun isRegistered(key: KClass<out SharedViewModelStoreOwner>): Boolean {
         return synchronized(lock) {
@@ -132,9 +133,9 @@ class ScopedViewModelStoreOwner : ViewModel() {
     }
 
     /**
-     * 获取所有已注册的 Scope 信息（调试用）
+     * Gets information about all registered scopes (for debugging).
      *
-     * @return Map<Scope名称, 包含的路由集合>
+     * @return Map<Scope name, Set of included route names>
      */
     fun getAllRegisteredInfo(): Map<String, Set<String>> {
         return synchronized(lock) {
@@ -146,7 +147,7 @@ class ScopedViewModelStoreOwner : ViewModel() {
     }
 
     /**
-     * 当 ViewModel 被清理时，清理所有注册的 StoreOwner
+     * Called when the ViewModel is cleared. Clears all registered StoreOwners.
      */
     override fun onCleared() {
         synchronized(lock) {
@@ -158,9 +159,9 @@ class ScopedViewModelStoreOwner : ViewModel() {
 }
 
 /**
- * 创建并记住 [ScopedViewModelStoreOwner] 实例
+ * Creates and remembers a [ScopedViewModelStoreOwner] instance.
  *
- * 内部使用，通过 [ProvideScopedViewModelStoreOwner] 调用
+ * Internal use only, called via [ProvideScopedViewModelStoreOwner].
  */
 @Composable
 fun rememberScopedViewModelStoreOwner(): ScopedViewModelStoreOwner {
