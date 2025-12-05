@@ -3,7 +3,7 @@
 
 # ViewModelInCompose
 
-[![](https://jitpack.io/v/OCNYang/ViewModelInCompose.svg)](https://jitpack.io/#OCNYang/ViewModelInCompose)
+[![](https://jitpack.io/v/ocnyang/viewmodelincompose.svg)](https://jitpack.io/#OCNYang/ViewModelInCompose)
 
 [中文文档](README_ZH.md)
 
