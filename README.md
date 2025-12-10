@@ -19,6 +19,7 @@ A Kotlin Multiplatform library providing enhanced ViewModel utilities for Compos
 ## Features
 
 - **LaunchedEffectOnce**: Execute side effects only once per page lifecycle
+- **DisposableEffectOnce**: Execute side effects with cleanup, both only once per page lifecycle
 - **EventEffect**: Lifecycle-aware one-time event handling from ViewModel to UI
 - **StateBus**: Cross-screen state sharing with automatic lifecycle management
 - **SharedViewModel**: Share ViewModels across multiple screens with automatic cleanup
@@ -87,6 +88,61 @@ fun UserScreen(userId: String) {
     // Re-executes only when userId changes
     LaunchedEffectOnce(userId) {
         viewModel.loadUser(userId)
+    }
+}
+```
+
+---
+
+## DisposableEffectOnce
+
+A `DisposableEffect` that executes only once per page lifecycle. Both the effect and the `onDispose` callback execute only once - effect runs on first composition, `onDispose` runs when the page is destroyed (ViewModel cleared).
+
+### When to Use
+
+- Subscribing to resources that need cleanup (listeners, observers)
+- Acquiring resources on screen enter and releasing on screen exit
+- One-time setup with guaranteed cleanup
+
+### Comparison with Standard DisposableEffect
+
+| Behavior | DisposableEffect | DisposableEffectOnce |
+|----------|------------------|---------------------|
+| Effect execution | On every key change | Only once |
+| onDispose trigger | On key change or leave composition | Only when page is destroyed |
+| Configuration change | Re-executes effect + onDispose | Neither re-executes |
+| Recomposition | May re-execute | Does not re-execute |
+
+### Usage
+
+```kotlin
+@Composable
+fun MyScreen() {
+    DisposableEffectOnce {
+        // Effect code runs once when page is created
+        val listener = registerListener()
+
+        onDispose {
+            // Cleanup runs once when page is destroyed
+            listener.unregister()
+        }
+    }
+}
+```
+
+### Practical Example
+
+```kotlin
+@Composable
+fun SensorScreen() {
+    DisposableEffectOnce {
+        // Subscribe to sensor updates - runs once
+        sensorManager.registerListener(sensorListener)
+
+        onDispose {
+            // Unsubscribe - runs once when leaving the screen
+            sensorManager.unregisterListener(sensorListener)
+        }
     }
 }
 ```

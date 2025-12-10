@@ -3,7 +3,9 @@
     "allow": [
       "Bash(./gradlew:*)",
       "WebSearch",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(unzip:*)",
+      "Bash(mv:*)"
     ],
     "deny": [],
     "ask": []

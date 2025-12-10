@@ -1,4 +1,4 @@
-package com.ocnyang.viewmodelincompose.launchedeffectonce
+package com.ocnyang.viewmodelincompose.effects
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,7 +22,7 @@ fun LaunchedEffectOnce(
     viewModelKey: String? = null,
     block: suspend CoroutineScope.() -> Unit,
 ) {
-    val viewModel: LaunchedOnceViewModel = viewModel(key = viewModelKey)
+    val viewModel: LaunchedEffectOnceViewModel = viewModel(key = viewModelKey)
 
     LaunchedEffect(Unit) {
         if (viewModel.tryExecute()) {
@@ -46,7 +46,7 @@ fun LaunchedEffectOnce(
     viewModelKey: String? = null,
     block: suspend CoroutineScope.() -> Unit,
 ) {
-    val viewModel: LaunchedOnceViewModel = viewModel(key = viewModelKey)
+    val viewModel: LaunchedEffectOnceViewModel = viewModel(key = viewModelKey)
     val keyHash = remember(key1) { key1.hashCode() }
 
     LaunchedEffect(key1) {
@@ -68,7 +68,7 @@ fun LaunchedEffectOnce(
     viewModelKey: String? = null,
     block: suspend CoroutineScope.() -> Unit,
 ) {
-    val viewModel: LaunchedOnceViewModel = viewModel(key = viewModelKey)
+    val viewModel: LaunchedEffectOnceViewModel = viewModel(key = viewModelKey)
     val keyHash = remember(key1, key2) { arrayOf(key1, key2).contentHashCode() }
 
     LaunchedEffect(key1, key2) {
@@ -91,7 +91,7 @@ fun LaunchedEffectOnce(
     viewModelKey: String? = null,
     block: suspend CoroutineScope.() -> Unit,
 ) {
-    val viewModel: LaunchedOnceViewModel = viewModel(key = viewModelKey)
+    val viewModel: LaunchedEffectOnceViewModel = viewModel(key = viewModelKey)
     val keyHash = remember(key1, key2, key3) { arrayOf(key1, key2, key3).contentHashCode() }
 
     LaunchedEffect(key1, key2, key3) {
@@ -112,7 +112,7 @@ fun LaunchedEffectOnce(
     viewModelKey: String? = null,
     block: suspend CoroutineScope.() -> Unit,
 ) {
-    val viewModel: LaunchedOnceViewModel = viewModel(key = viewModelKey)
+    val viewModel: LaunchedEffectOnceViewModel = viewModel(key = viewModelKey)
     val keyHash = remember(*keys) { keys.contentHashCode() }
 
     LaunchedEffect(*keys) {
@@ -125,7 +125,7 @@ fun LaunchedEffectOnce(
 /**
  * Internal ViewModel to track execution state across recompositions.
  */
-internal class LaunchedOnceViewModel : ViewModel() {
+internal open class LaunchedEffectOnceViewModel : ViewModel() {
 
     private val executedKeyHash = atomic<Int?>(null)
 
@@ -139,7 +139,7 @@ internal class LaunchedOnceViewModel : ViewModel() {
         }
     }
 
-    companion object {
+    companion object Companion {
         private const val NO_KEY_HASH = Int.MIN_VALUE
     }
 }

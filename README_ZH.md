@@ -19,6 +19,7 @@
 ## 功能
 
 - **LaunchedEffectOnce**：在页面生命周期内只执行一次副作用
+- **DisposableEffectOnce**：带清理回调的副作用，effect 和 onDispose 都只执行一次
 - **EventEffect**：生命周期感知的一次性事件处理
 - **StateBus**：跨页面状态共享，自动管理生命周期
 - **SharedViewModel**：跨多个页面共享 ViewModel，自动清理
@@ -87,6 +88,61 @@ fun UserScreen(userId: String) {
     // 仅当 userId 变化时重新执行
     LaunchedEffectOnce(userId) {
         viewModel.loadUser(userId)
+    }
+}
+```
+
+---
+
+## DisposableEffectOnce
+
+在页面生命周期内只执行一次的 `DisposableEffect`。effect 和 `onDispose` 都只执行一次——effect 在首次组合时执行，`onDispose` 在页面销毁（ViewModel 清理）时执行。
+
+### 适用场景
+
+- 订阅需要清理的资源（监听器、观察者）
+- 进入页面时获取资源，退出页面时释放
+- 需要保证清理的一次性设置
+
+### 与标准 DisposableEffect 对比
+
+| 行为 | DisposableEffect | DisposableEffectOnce |
+|------|------------------|---------------------|
+| Effect 执行 | 每次 key 变化时 | 只执行一次 |
+| onDispose 触发 | key 变化或离开组合时 | 只在页面销毁时 |
+| 配置变更时 | 重新执行 effect + onDispose | 都不会重新执行 |
+| 重组时 | 可能重新执行 | 不会重新执行 |
+
+### 用法
+
+```kotlin
+@Composable
+fun MyScreen() {
+    DisposableEffectOnce {
+        // Effect 代码，页面创建时执行一次
+        val listener = registerListener()
+
+        onDispose {
+            // 清理代码，页面销毁时执行一次
+            listener.unregister()
+        }
+    }
+}
+```
+
+### 实际示例
+
+```kotlin
+@Composable
+fun SensorScreen() {
+    DisposableEffectOnce {
+        // 订阅传感器更新 - 只执行一次
+        sensorManager.registerListener(sensorListener)
+
+        onDispose {
+            // 取消订阅 - 离开页面时只执行一次
+            sensorManager.unregisterListener(sensorListener)
+        }
     }
 }
 ```

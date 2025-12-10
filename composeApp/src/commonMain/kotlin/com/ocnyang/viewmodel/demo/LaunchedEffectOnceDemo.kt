@@ -30,7 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import com.ocnyang.viewmodelincompose.launchedeffectonce.LaunchedEffectOnce
+import com.ocnyang.viewmodelincompose.effects.LaunchedEffectOnce
 
 /**
  * LaunchedEffectOnce Demo
