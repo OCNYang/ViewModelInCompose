@@ -92,6 +92,79 @@ fun UserScreen(userId: String) {
 }
 ```
 
+### Lifecycle Execution Comparison
+
+The following diagrams show when each effect type executes during the Composable lifecycle:
+
+#### LaunchedEffect
+
+```mermaid
+flowchart LR
+    A[First Composition] --> B[State Recomposition] --> C[Key Changed] --> D[Navigate Away] --> E[Return] --> F[Config Change] --> G[Page Exit]
+
+    A -.- A1[✅ effect executes]
+    B -.- B1[❌ skipped]
+    C -.- C1[✅ effect executes]
+    D -.- D1[cancelled]
+    E -.- E1[✅ effect executes]
+    F -.- F1[✅ effect executes]
+    G -.- G1[cancelled]
+```
+
+#### LaunchedEffectOnce
+
+```mermaid
+flowchart LR
+    A[First Composition] --> B[State Recomposition] --> C[Key Changed] --> D[Navigate Away] --> E[Return] --> F[Config Change] --> G[Page Exit]
+
+    A -.- A1[✅ effect executes]
+    B -.- B1[❌ skipped]
+    C -.- C1[✅ effect executes]
+    D -.- D1[paused]
+    E -.- E1[❌ skipped]
+    F -.- F1[❌ skipped]
+    G -.- G1[ViewModel cleared]
+```
+
+#### DisposableEffect
+
+```mermaid
+flowchart LR
+    A[First Composition] --> B[State Recomposition] --> C[Key Changed] --> D[Navigate Away] --> E[Return] --> F[Config Change] --> G[Page Exit]
+
+    A -.- A1[✅ effect executes]
+    B -.- B1[❌ skipped]
+    C -.- C1[✅ onDispose + effect]
+    D -.- D1[✅ onDispose]
+    E -.- E1[✅ effect executes]
+    F -.- F1[✅ onDispose + effect]
+    G -.- G1[✅ onDispose]
+```
+
+#### DisposableEffectOnce
+
+```mermaid
+flowchart LR
+    A[First Composition] --> B[State Recomposition] --> C[Key Changed] --> D[Navigate Away] --> E[Return] --> F[Config Change] --> G[Page Exit]
+
+    A -.- A1[✅ effect executes]
+    B -.- B1[❌ skipped]
+    C -.- C1[- no key]
+    D -.- D1[paused]
+    E -.- E1[❌ skipped]
+    F -.- F1[❌ skipped]
+    G -.- G1[✅ onDispose]
+```
+
+#### Summary Table
+
+| Effect | First Composition | State Recomposition | Key Changed | Navigate Away | Return | Config Change | Page Exit |
+|--------|-------------------|---------------------|-------------|---------------|--------|---------------|-----------|
+| LaunchedEffect | ✅ execute | ❌ skip | ✅ execute | cancel | ✅ execute | ✅ execute | cancel |
+| LaunchedEffectOnce | ✅ execute | ❌ skip | ✅ execute | pause | ❌ skip | ❌ skip | - |
+| DisposableEffect | ✅ execute | ❌ skip | ✅ dispose+execute | ✅ dispose | ✅ execute | ✅ dispose+execute | ✅ dispose |
+| DisposableEffectOnce | ✅ execute | ❌ skip | - (no key) | pause | ❌ skip | ❌ skip | ✅ dispose |
+
 ---
 
 ## DisposableEffectOnce

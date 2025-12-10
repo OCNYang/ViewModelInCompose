@@ -92,6 +92,79 @@ fun UserScreen(userId: String) {
 }
 ```
 
+### 生命周期执行对比
+
+下图展示了各种 effect 在 Composable 生命周期中的执行时机：
+
+#### LaunchedEffect
+
+```mermaid
+flowchart LR
+    A[首次组合] --> B[状态重组] --> C[Key 变化] --> D[跳转离开] --> E[返回] --> F[配置变更] --> G[页面退出]
+
+    A -.- A1[✅ effect 执行]
+    B -.- B1[❌ 跳过]
+    C -.- C1[✅ effect 执行]
+    D -.- D1[取消]
+    E -.- E1[✅ effect 执行]
+    F -.- F1[✅ effect 执行]
+    G -.- G1[取消]
+```
+
+#### LaunchedEffectOnce
+
+```mermaid
+flowchart LR
+    A[首次组合] --> B[状态重组] --> C[Key 变化] --> D[跳转离开] --> E[返回] --> F[配置变更] --> G[页面退出]
+
+    A -.- A1[✅ effect 执行]
+    B -.- B1[❌ 跳过]
+    C -.- C1[✅ effect 执行]
+    D -.- D1[暂停]
+    E -.- E1[❌ 跳过]
+    F -.- F1[❌ 跳过]
+    G -.- G1[ViewModel 清理]
+```
+
+#### DisposableEffect
+
+```mermaid
+flowchart LR
+    A[首次组合] --> B[状态重组] --> C[Key 变化] --> D[跳转离开] --> E[返回] --> F[配置变更] --> G[页面退出]
+
+    A -.- A1[✅ effect 执行]
+    B -.- B1[❌ 跳过]
+    C -.- C1[✅ onDispose + effect]
+    D -.- D1[✅ onDispose]
+    E -.- E1[✅ effect 执行]
+    F -.- F1[✅ onDispose + effect]
+    G -.- G1[✅ onDispose]
+```
+
+#### DisposableEffectOnce
+
+```mermaid
+flowchart LR
+    A[首次组合] --> B[状态重组] --> C[Key 变化] --> D[跳转离开] --> E[返回] --> F[配置变更] --> G[页面退出]
+
+    A -.- A1[✅ effect 执行]
+    B -.- B1[❌ 跳过]
+    C -.- C1[- 无 key]
+    D -.- D1[暂停]
+    E -.- E1[❌ 跳过]
+    F -.- F1[❌ 跳过]
+    G -.- G1[✅ onDispose]
+```
+
+#### 汇总表格
+
+| Effect | 首次组合 | 状态重组 | Key 变化 | 跳转离开 | 返回 | 配置变更 | 页面退出 |
+|--------|---------|---------|---------|---------|------|---------|---------|
+| LaunchedEffect | ✅ 执行 | ❌ 跳过 | ✅ 执行 | 取消 | ✅ 执行 | ✅ 执行 | 取消 |
+| LaunchedEffectOnce | ✅ 执行 | ❌ 跳过 | ✅ 执行 | 暂停 | ❌ 跳过 | ❌ 跳过 | - |
+| DisposableEffect | ✅ 执行 | ❌ 跳过 | ✅ dispose+执行 | ✅ dispose | ✅ 执行 | ✅ dispose+执行 | ✅ dispose |
+| DisposableEffectOnce | ✅ 执行 | ❌ 跳过 | - (无 key) | 暂停 | ❌ 跳过 | ❌ 跳过 | ✅ dispose |
+
 ---
 
 ## DisposableEffectOnce
